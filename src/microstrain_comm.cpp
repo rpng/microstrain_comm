@@ -812,86 +812,67 @@ static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition,
 int main(int argc, char** argv) {
   app_t* app = new app_t();
   app->little_endian = systemLittleEndianCheck();
+  
+  ros::init(argc, argv, "microstrain_comm");
+  ros::NodeHandle nh("~");
 
-  // default settings
-  app->verbose = 0;
-  app->quiet = 0;
-  app->message_mode = DANG_DVEL_MAG;
-  app->data_rate = DATA_RATE_DEFAULT;
-  app->baud_rate = BAUD_RATE_DEFAULT;
-  app->delta_t = DELTA_ANG_VEL_DT_DEFAULT;
-  app->filter_window_size = FILTER_WINDOW_SIZE_DEFAULT;
-  app->do_sync = true;
-  app->channel = "MICROSTRAIN_INS";
-
-  app->changed_baud_rate = false;
-  app->changed_data_rate = false;
-  app->in_continuous_mode = false;
-
+  // Default settings
   string user_comm_port_name;
-  bool auto_comm = true;
-  char data_rate = 'l';
+  bool auto_comm;
+  string data_rate;
 
-  bool acc_ang_mag_rot = false;
-  bool acc_ang_mag = false;
-  bool acc_stab = false;
+  bool acc_ang_mag_rot;
+  bool acc_ang_mag;
+  bool acc_stab;
 
-  ConciseArgs opt(argc, argv);
-  opt.add(app->verbose, "v", "verbose");
-  opt.add(app->quiet, "q", "quiet");
-  opt.add(user_comm_port_name, "d", "dev", "Device file to connect to (default is automatic scan)");
-  opt.add(data_rate, "b", "rate", "Update rate: 'l'-low (100 Hz), 'm'-medium (500 Hz), 'h'-high (1000 Hz)");
-  opt.add(app->filter_window_size, "w", "window", "Gyro & accel digital filter window size: 1-32");
-  opt.add(acc_ang_mag_rot, "r", "quat");
-  opt.add(acc_ang_mag, "n", "no_delta");
-  opt.add(acc_stab, "f", "filter");
-  opt.add(app->channel, "c", "channel", "LCM message output channel");
-  opt.add(app->do_sync, "s", "time_sync");
-  opt.parse();
+  nh.param("verbose", app->verbose, 0);
+  nh.param("quiet", app->quiet, 0);
+  nh.param("user_comm_port_name", user_comm_port_name, NULL);
+  nh.param("rate", data_rate, "low");
+  nh.param("window", app->filter_window_size, FILTER_WINDOW_SIZE_DEFAULT);
+  nh.param("quat", acc_ang_mag_rot, false);
+  nh.param("no_delta", acc_ang_mag, false);
+  nh.param("filter", acc_stab, false);
+  nh.param("time_sync", app->do_sync, true);
 
-  if (opt.wasParsed("dev")) auto_comm = false;
+  // If user defined port, don't use the auto scan
+  if (user_comm_port_name != NULL)
+    auto_comm = false;
 
   // data rate (which also determines baud rate)
-  if (opt.wasParsed("rate")) {
-    switch (data_rate) {
-      case 'l':
-        // Default
-        break;
-      case 'm':
-        app->data_rate = DATA_RATE_MED;
-        app->baud_rate = BAUD_RATE_MED;
-        app->delta_t = DELTA_ANG_VEL_DT_MED;
-        break;
-      case 'h':
-        app->data_rate = DATA_RATE_HIGH;
-        app->baud_rate = BAUD_RATE_HIGH;
-        app->delta_t = DELTA_ANG_VEL_DT_HIGH;
-        break;
-      default:
-        cerr << "Unknown update rate flag - using default rate" << endl;
-        break;
-    }
+  switch (data_rate) {
+    case 'low':
+      // Default
+      break;
+    case 'medium':
+      app->data_rate = DATA_RATE_MED;
+      app->baud_rate = BAUD_RATE_MED;
+      app->delta_t = DELTA_ANG_VEL_DT_MED;
+      break;
+    case 'high':
+      app->data_rate = DATA_RATE_HIGH;
+      app->baud_rate = BAUD_RATE_HIGH;
+      app->delta_t = DELTA_ANG_VEL_DT_HIGH;
+      break;
+    default:
+      cerr << "Unknown update rate flag - using default rate" << endl;
+      break;
   }
 
   if (!app->quiet)
     cout << "Setting data rate to " << app->data_rate << " Hz" << endl;
 
   // make sure filter window size isn't too big or small
-  if (opt.wasParsed("window")) {
-    if (app->filter_window_size < FILTER_WINDOW_SIZE_MIN) {
-      app->filter_window_size = FILTER_WINDOW_SIZE_DEFAULT;
-      cerr << "Digital filter window size too small, using default size"
-           << endl;
-    } else if (app->filter_window_size > FILTER_WINDOW_SIZE_MAX) {
-      app->filter_window_size = FILTER_WINDOW_SIZE_DEFAULT;
-      cerr << "Digital filter window size too large, using default size"
-           << endl;
-    }
-
-    if (!app->quiet)
-      cout << "Setting digital filter window size to "
-           << app->filter_window_size << endl;
+  if (app->filter_window_size < FILTER_WINDOW_SIZE_MIN) {
+    app->filter_window_size = FILTER_WINDOW_SIZE_DEFAULT;
+    cerr << "Digital filter window size too small, using default size" << endl;
+  } else if (app->filter_window_size > FILTER_WINDOW_SIZE_MAX) {
+    app->filter_window_size = FILTER_WINDOW_SIZE_DEFAULT;
+    cerr << "Digital filter window size too large, using default size" << endl;
   }
+
+  if (!app->quiet)
+    cout << "Setting digital filter window size to " << app->filter_window_size << endl;
 
   // modes are mutually exlusive
   if (acc_stab) {
@@ -902,8 +883,7 @@ int main(int argc, char** argv) {
     if (app->data_rate != DATA_RATE_HIGH) {
       app->message_mode = ACC_ANG_MAG_ROT;
     } else {
-      cout << "Can't compute orientation at high speed, using delta angle + "
-              "delta velocity mode instead" << endl;
+      cout << "Can't compute orientation at high speed, using delta angle + delta velocity mode instead" << endl;
       app->message_mode = DANG_DVEL_MAG;
     }
   }
