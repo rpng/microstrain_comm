@@ -174,8 +174,7 @@ void makeUnsignedInt16(unsigned int val, Byte* high, Byte* low) {
   *high = static_cast<Byte>(val >> 8);
 }
 
-void makeUnsignedInt32(unsigned int val, Byte* byte3, Byte* byte2, Byte* byte1,
-                       Byte* byte0) {
+void makeUnsignedInt32(unsigned int val, Byte* byte3, Byte* byte2, Byte* byte1, Byte* byte0) {
   *byte0 = static_cast<Byte>(val);
   *byte1 = static_cast<Byte>(val >> 8);
   *byte2 = static_cast<Byte>(val >> 16);
@@ -323,8 +322,7 @@ int setup_com_port(int comPort, speed_t baudRate) {
   options.c_lflag = 0;       // raw input
 
   // Time-Outs -- won't work with NDELAY option in the call to open
-  options.c_cc[VMIN] =
-      0;  // block reading until RX x characers. If x = 0, it is non-blocking.
+  options.c_cc[VMIN] = 0;  // block reading until RX x characers. If x = 0, it is non-blocking.
   options.c_cc[VTIME] = 100;  // Inter-Character Timer -- i.e. timeout= x*.1 s
 
   // Set local mode and enable the receiver
@@ -504,7 +502,8 @@ bool set_sampling_settings(app_t* app) {
       0x00,  // Bytes 16-20: reserved (zeros)
       0x00, 0x00, 0x00, 0x00};
 
-  if (app->verbose) cout << "Setting sampling settings" << endl;
+  if (app->verbose)
+    cout << "Setting sampling settings" << endl;
 
   if (write(app->comm, set_sampling_params_string, LENGTH_SAMPLING_SETTINGS) != LENGTH_SAMPLING_SETTINGS) {
     cerr << "Error writing command to set sampling settings" << endl;
@@ -691,7 +690,7 @@ bool handle_message(app_t* app) {
   }
   
   // Test debug
-  cout << app->reading.header.stamp << " (" << app->reading.linear_acceleration << ")" << endl;
+  cout << app->reading.header.stamp << endl << app->reading.linear_acceleration << endl;
 
   return success;
 }
@@ -779,8 +778,10 @@ void unpack_packets(app_t* app) {
 static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, void* user) {
   
   // Check to see if the user has requested a stop
-  if(!ros::ok())
+  if(!ros::ok()) {
     g_main_loop_quit(mainloop);
+    return true;
+  }
   
   app_t* app = (app_t*)user;
 
@@ -815,6 +816,15 @@ static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, 
 
   unpack_packets(app);
 
+  return TRUE;
+}
+
+gboolean timeout_callback(gpointer data)
+{
+  static int i = 0;
+  i++;
+  g_print("timeout_callback called %d times\n", i);
+  cout << ((GMainLoop*)data) << endl;
   return TRUE;
 }
 
@@ -940,7 +950,7 @@ int main(int argc, char** argv) {
   app->expected_segment_length = 1;
   GIOChannel* ioc = g_io_channel_unix_new(app->comm);
   g_io_add_watch_full(ioc, G_PRIORITY_HIGH, G_IO_IN, (GIOFunc)serial_read_handler, (void*)app, NULL);
-
+  g_timeout_add (100 , timeout_callback , mainloop); 
   g_main_loop_run(mainloop);
 
   // received signal - soft reset to cleanup before quitting
