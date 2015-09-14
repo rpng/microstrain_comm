@@ -14,12 +14,17 @@
 
 #include <ros/ros.h>
 
-#include <bot_core/bot_core.h>
-#include <bot_param/param_client.h>
+#include "libbot/timestamp.h"
+#include "libbot/rotations.h"
+#include "libbot/small_linalg.h"
+#include "libbot/ringbuf.h"
+
+//#include <bot_core/bot_core.h>
+//#include <bot_param/param_client.h>
 // #include <lcm/lcm.h>
 // #include <lcmtypes/microstrain_ins_t.h>
 
-#include <ConciseArgs>
+//#include <ConciseArgs>
 #define ACC_ANG_MAG 0xCB
 #define LENGTH_ACC_ANG_MAG 43
 
@@ -390,8 +395,7 @@ bool set_continuous_mode(app_t* app) {
 
   cout << "Setting continuous mode" << endl;
 
-  if (write(app->comm, set_mode_string, LENGTH_CONTINUOUS_MODE) !=
-      LENGTH_CONTINUOUS_MODE) {
+  if (write(app->comm, set_mode_string, LENGTH_CONTINUOUS_MODE) != LENGTH_CONTINUOUS_MODE) {
     cerr << "Error writing command to set continuous mode" << endl;
     return false;
   }
@@ -443,8 +447,7 @@ bool set_comms_baud_rate(app_t* app) {
 
   if (app->verbose) cout << "Setting baud rate" << endl;
 
-  if (write(app->comm, set_comms_baud_rate_string, LENGTH_COMMS_SETTINGS) !=
-      LENGTH_COMMS_SETTINGS) {
+  if (write(app->comm, set_comms_baud_rate_string, LENGTH_COMMS_SETTINGS) != LENGTH_COMMS_SETTINGS) {
     cerr << "Error writing command to set comms baud rate" << endl;
     return false;
   }
@@ -492,8 +495,7 @@ bool set_sampling_settings(app_t* app) {
 
   if (app->verbose) cout << "Setting sampling settings" << endl;
 
-  if (write(app->comm, set_sampling_params_string, LENGTH_SAMPLING_SETTINGS) !=
-      LENGTH_SAMPLING_SETTINGS) {
+  if (write(app->comm, set_sampling_params_string, LENGTH_SAMPLING_SETTINGS) != LENGTH_SAMPLING_SETTINGS) {
     cerr << "Error writing command to set sampling settings" << endl;
     return false;
   }
@@ -630,9 +632,7 @@ bool handle_message(app_t* app) {
       }
 
       // Debug to show our sensor is working
-      cout << ins_message.utime << " (" << ins_message.accel[0] << ", "
-           << ins_message.accel[1] << ", " << ins_message.accel[2] << ")"
-           << endl;
+      cout << ins_message.utime << " (" << ins_message.accel[0] << ", " << ins_message.accel[1] << ", " << ins_message.accel[2] << ")" << endl;
 
       microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
@@ -668,8 +668,7 @@ bool handle_message(app_t* app) {
     }
     default: {
       if (!app->quiet)
-        fprintf(stderr, "Unknown message start byte: %d\n",
-                app->message_start_byte);
+        fprintf(stderr, "Unknown message start byte: %d\n", app->message_start_byte);
       break;
     }
   }
@@ -685,16 +684,13 @@ bool handle_message(app_t* app) {
  * has all expected bytes before taking appropriate action.
  */
 void unpack_packets(app_t* app) {
-  while (bot_ringbuf_available(app->read_buffer) >=
-         app->expected_segment_length) {
+  while (bot_ringbuf_available(app->read_buffer) >= app->expected_segment_length) {
     switch (app->current_segment) {
       case 's':
-        bot_ringbuf_peek(app->read_buffer, 1,
-                         (uint8_t*)&app->message_start_byte);
+        bot_ringbuf_peek(app->read_buffer, 1, (uint8_t*)&app->message_start_byte);
 
         if (app->verbose)
-          fprintf(stderr, "received message start byte: id=%d\n",
-                  app->message_start_byte);
+          fprintf(stderr, "received message start byte: id=%d\n", app->message_start_byte);
 
         app->current_segment = 'p';
 
