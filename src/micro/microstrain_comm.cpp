@@ -13,6 +13,7 @@
 #include <math.h>
 
 #include <ros/ros.h>
+#include <glib.h>
 
 #include "libbot/timestamp.h"
 #include "libbot/rotations.h"
@@ -193,8 +194,7 @@ float make32bitFloat(const Byte* pBytes, bool little_endian) {
   return f;
 }
 
-void unpack32BitFloats(float* dest, const Byte* source_bytes, int length,
-                       bool little_endian) {
+void unpack32BitFloats(float* dest, const Byte* source_bytes, int length, bool little_endian) {
   int ii;
   int byte_ind = 0;
   for (ii = 0; ii < length; ii++) {
@@ -763,8 +763,7 @@ void unpack_packets(app_t* app) {
  * and calls unpack_packets
  *
  */
-static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition,
-                                    void* user) {
+static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, void* user) {
   app_t* app = (app_t*)user;
 
   static uint8_t middle_buffer[INPUT_BUFFER_SIZE];
@@ -774,16 +773,13 @@ static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition,
 
   if (ioctl(app->comm, FIONREAD, &available) != 0) {
     if (!app->quiet)
-      fprintf(
-          stderr,
-          "ioctl check for bytes available didn't return 0, breaking read\n");
+      fprintf(stderr, "ioctl check for bytes available didn't return 0, breaking read\n");
     return TRUE;
   }
 
   if (available > INPUT_BUFFER_SIZE) {
     if (!app->quiet)
-      fprintf(stderr, "too many bytes available: %d, flushing input buffer\n",
-              available);
+      fprintf(stderr, "too many bytes available: %d, flushing input buffer\n", available);
     tcflush(app->comm, TCIFLUSH);
     return TRUE;
   }
@@ -792,8 +788,7 @@ static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition,
 
   if (num_read != available) {
     if (!app->quiet)
-      fprintf(stderr, "warning, read %d of %d available bytes\n", num_read,
-              available);
+      fprintf(stderr, "warning, read %d of %d available bytes\n", num_read, available);
   }
 
   if (num_read > 0) {

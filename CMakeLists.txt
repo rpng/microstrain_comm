@@ -6,6 +6,10 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
 )
 
+find_package(GTK2)
+add_definitions(-DHAVE_GTK)
+include_directories(SYSTEM ${GTK2_INCLUDE_DIRS})
+
 catkin_package(
   CATKIN_DEPENDS
     roscpp
@@ -17,6 +21,7 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${GTK2_LIBRARIES}
   ${PROJECT_SOURCE_DIR}
 )
 
