@@ -519,6 +519,8 @@ bool handle_message(app_t* app) {
   int ins_timer;
   int64_t utime = bot_timestamp_now();
 
+  memset(&app->reading, 0, sizeof(app->reading));
+
   float vals[9];
 
   if (app->verbose) {
@@ -775,6 +777,11 @@ void unpack_packets(app_t* app) {
  *
  */
 static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, void* user) {
+  
+  // Check to see if the user has requested a stop
+  if(!ros::ok())
+    g_main_loop_quit(mainloop);
+  
   app_t* app = (app_t*)user;
 
   static uint8_t middle_buffer[INPUT_BUFFER_SIZE];
