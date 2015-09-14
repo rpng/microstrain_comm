@@ -568,8 +568,7 @@ bool handle_message(app_t* app) {
         ins_message.utime = utime;
       }
 
-      // microstrain_ins_t_publish(app->lcm, app->channel.c_str(),
-      // &ins_message);
+      // microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
     }
 
@@ -634,7 +633,7 @@ bool handle_message(app_t* app) {
       // Debug to show our sensor is working
       cout << ins_message.utime << " (" << ins_message.accel[0] << ", " << ins_message.accel[1] << ", " << ins_message.accel[2] << ")" << endl;
 
-      microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
+//      microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
     }
     case CONTINUOUS_MODE_COMMAND: {
@@ -883,7 +882,7 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Little endian = %d\n", (int)app->little_endian);
 
   mainloop = g_main_loop_new(NULL, FALSE);
-  app->lcm = bot_lcm_get_global(NULL);
+//  app->lcm = bot_lcm_get_global(NULL);
   app->utime_prev = bot_timestamp_now();
   app->sync = bot_timestamp_sync_init(62500, (int64_t)68719 * 62500, 1.001);
   //  app->param = bot_param_new_from_server(app->lcm, 1);
