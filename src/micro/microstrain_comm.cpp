@@ -16,6 +16,7 @@
 #include "sensor_msgs/Imu.h"
 
 #include <glib.h>
+#include <gio/gio.h>
 
 #include "libbot/timestamp.h"
 #include "libbot/rotations.h"
@@ -237,12 +238,10 @@ void install_signal_handler() {
 // with proper settings and finding an attached microstrain device -----------
 
 // scandev
-// finds attached microstrain devices and prompts user for choice then returns
-// selected portname
+// finds attached microstrain devices and prompts user for choice then returns selected portname
 bool scandev(char* comm_port_name) {
   FILE* instream;
-  char devnames[255][255];  // allows for up to 256 devices with path links up
-                            // to 255 characters long each
+  char devnames[255][255];  // allows for up to 256 devices with path links up to 255 characters long each
   int devct = 0;  // counter for number of devices
   int i = 0;
   int j = 0;
@@ -254,32 +253,31 @@ bool scandev(char* comm_port_name) {
 
   printf("Searching for devices...\n");
 
-  instream = popen(command, "r");  // execute piped command in read mode
-
-  if (!instream) {  // SOMETHING WRONG WITH THE SYSTEM COMMAND PIPE...EXITING
+  // execute piped command in read mode
+  instream = popen(command, "r");
+  
+  // SOMETHING WRONG WITH THE SYSTEM COMMAND PIPE...EXITING
+  if (!instream) {
     printf("ERROR BROKEN PIPELINE %s\n", command);
     return false;
   }
-
-  for (i = 0; i < 255 && (fgets(devnames[i], sizeof(devnames[i]), instream));
-       i++) {  // load char array of device addresses
+  
+  // load char array of device addresses
+  for (i = 0; i < 255 && (fgets(devnames[i], sizeof(devnames[i]), instream)); i++) {
     ++devct;
   }
 
   for (i = 0; i < devct; i++) {
     for (j = 0; j < sizeof(devnames[i]); j++) {
       if (devnames[i][j] == '\n') {
-        devnames[i][j] = '\0';  // replaces newline inserted by pipe reader with
-                                // char array terminator character
+        devnames[i][j] = '\0';  // replaces newline inserted by pipe reader with har array terminator character
         break;  // breaks loop after replacement
       }
     }
     printf("Device Found:\n%d: %s\n", i, devnames[i]);
   }
 
-  // CHOOSE DEVICE TO CONNECT TO AND CONNECT TO IT (IF THERE ARE CONNECTED
-  // DEVICES)
-
+  // CHOOSE DEVICE TO CONNECT TO AND CONNECT TO IT (IF THERE ARE CONNECTED DEVICES)
   if (devct > 0) {
     printf("Number of devices = %d\n", devct);
     if (devct > 1) {
@@ -337,8 +335,8 @@ int setup_com_port(int comPort, speed_t baudRate) {
   // Set the new options for the port...
   int status = tcsetattr(comPort, TCSANOW, &options);
 
-  if (status != 0) {  // For error message
-
+  // For error message
+  if (status != 0) {
     printf("Configuring comport failed\n");
     return status;
   }
@@ -390,7 +388,12 @@ unsigned short cksum(const Byte* packet_bytes, int packet_length) {
  * sets continuous streaming operation
  */
 bool set_continuous_mode(app_t* app) {
-  char set_mode_string[] = {0xC4, 0xC1, 0x29, app->message_mode};
+  char set_mode_string[] = {
+    0xC4,
+    0xC1,
+    0x29,
+    app->message_mode
+  };
 
   cout << "Setting continuous mode" << endl;
 
@@ -406,7 +409,11 @@ bool set_continuous_mode(app_t* app) {
  * stops continous streaming - command does not generate a response
  */
 void stop_continuous_mode(app_t* app) {
-  char stop_mode_string[] = {0xFA, 0x75, 0xB4};
+  char stop_mode_string[] = {
+    0xFA,
+    0x75,
+    0xB4
+  };
 
   if (write(app->comm, stop_mode_string, 3) != 3) {
     cerr << "Error writing command to stop continuous mode" << endl;
@@ -417,7 +424,11 @@ void stop_continuous_mode(app_t* app) {
  * soft device reset - return to default settings
  */
 void soft_reset(app_t* app) {
-  char soft_reset_string[] = {0xFE, 0x9E, 0x3A};
+  char soft_reset_string[] = {
+    0xFE,
+    0x9E,
+    0x3A
+  };
 
   if (write(app->comm, soft_reset_string, 3) != 3) {
     cerr << "Error writing command to stop continuous mode" << endl;
@@ -444,7 +455,8 @@ bool set_comms_baud_rate(app_t* app) {
       0x00   // Byte  11 : reserved (zero)
   };
 
-  if (app->verbose) cout << "Setting baud rate" << endl;
+  if (app->verbose)
+    cout << "Setting baud rate" << endl;
 
   if (write(app->comm, set_comms_baud_rate_string, LENGTH_COMMS_SETTINGS) != LENGTH_COMMS_SETTINGS) {
     cerr << "Error writing command to set comms baud rate" << endl;
@@ -900,8 +912,7 @@ int main(int argc, char** argv) {
   install_signal_handler();
 
   // simple state machine
-  if (app->data_rate == DATA_RATE_DEFAULT &&
-      app->filter_window_size == FILTER_WINDOW_SIZE_DEFAULT) {
+  if (app->data_rate == DATA_RATE_DEFAULT && app->filter_window_size == FILTER_WINDOW_SIZE_DEFAULT) {
     // set continous mode and we're done
     if (!set_continuous_mode(app)) {
       exit(1);
