@@ -8,7 +8,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(GTK2)
 add_definitions(-DHAVE_GTK)
-include_directories(SYSTEM ${GTK2_INCLUDE_DIRS})
 
 catkin_package(
   CATKIN_DEPENDS
@@ -21,7 +20,7 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
-  ${GTK2_LIBRARIES}
+  ${GTK2_INCLUDE_DIRS}
   ${PROJECT_SOURCE_DIR}
 )
 
@@ -32,6 +31,12 @@ add_executable(${PROJECT_NAME}_node
   src/libbot/rotations.c
   src/libbot/serial.c
   src/libbot/timestamp.c
+)
+
+# What libraries we need
+target_link_libraries(${PROJECT_NAME}_node
+  ${catkin_LIBRARIES}
+  ${GTK2_LIBRARIES}
 )
 
 # # pull in the pods macros. See cmake/pods.cmake for documentation

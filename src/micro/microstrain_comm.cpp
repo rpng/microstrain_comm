@@ -13,6 +13,8 @@
 #include <math.h>
 
 #include <ros/ros.h>
+#include "sensor_msgs/Imu.h"
+
 #include <glib.h>
 
 #include "libbot/timestamp.h"
@@ -78,47 +80,50 @@ static GMainLoop* mainloop = NULL;
 
 // self structure
 class app_t {
- public:
-  // communication variables
-  int comm, status;
-  char comm_port_name[255];
-  unsigned int baud_rate, data_rate;
+  public:
+    // communication variables
+    int comm, status;
+    char comm_port_name[255];
+    unsigned int baud_rate, data_rate;
 
-  // dt for angular rate and acceleration computation
-  double delta_t;
+    // dt for angular rate and acceleration computation
+    double delta_t;
 
-  // window size for gyro and accelerometer digital filter
-  int filter_window_size;
+    // window size for gyro and accelerometer digital filter
+    int filter_window_size;
 
-  // input buffer variables
-  Byte input_buffer[INPUT_BUFFER_SIZE];
-  Byte message_mode;
-  BotRingBuf* read_buffer;
-  char current_segment;
-  int expected_segment_length;
+    // input buffer variables
+    Byte input_buffer[INPUT_BUFFER_SIZE];
+    Byte message_mode;
+    BotRingBuf* read_buffer;
+    char current_segment;
+    int expected_segment_length;
 
-  // packet variables
-  int message_size;
-  int message_start_byte;
+    // packet variables
+    int message_size;
+    int message_start_byte;
 
-  // state flags (not currently used, but may be in future)
-  bool changed_baud_rate;
-  bool changed_data_rate;
-  bool in_continuous_mode;
+    // state flags (not currently used, but may be in future)
+    bool changed_baud_rate;
+    bool changed_data_rate;
+    bool in_continuous_mode;
 
-  // boolean setting flags
-  bool quiet, verbose;
+    // boolean setting flags
+    bool quiet, verbose;
 
-  bool little_endian;
+    bool little_endian;
 
-  int64_t utime_prev;
+    int64_t utime_prev;
 
-//  BotParam* param;
+  //  BotParam* param;
 
-  string channel;
+    string channel;
+    
+    // Our imu message
+    sensor_msgs::Imu reading;
 
-  bot_timestamp_sync_state* sync;
-  bool do_sync;
+    bot_timestamp_sync_state* sync;
+    bool do_sync;
 };
 
 bool systemLittleEndianCheck() {
@@ -245,8 +250,7 @@ bool scandev(char* comm_port_name) {
 
   // char command[] = "find /dev/serial -print | grep -i microstrain"; //search
   // /dev/serial for microstrain devices
-  char command[] =
-      "ls /dev/ttyACM*";  // search /dev/serial for microstrain devices
+  char command[] = "ls /dev/ttyACM*";  // search /dev/serial for microstrain devices
 
   printf("Searching for devices...\n");
 
@@ -279,17 +283,12 @@ bool scandev(char* comm_port_name) {
   if (devct > 0) {
     printf("Number of devices = %d\n", devct);
     if (devct > 1) {
-      printf(
-          "Please choose the number of the device to connect to (0 to %i):\n",
-          devct - 1);
-      while (scanf("%i", &userchoice) == 0 || userchoice < 0 ||
-             userchoice >
-                 devct -
-                     1) {  // check that there's input and in the correct range
-        printf("Invalid choice...Please choose again between 0 and %d:\n",
-               devct - 1);
-        getchar();  // clear carriage return from keyboard buffer after invalid
-                    // choice
+      printf( "Please choose the number of the device to connect to (0 to %i):\n", devct - 1);
+      // check that there's input and in the correct range
+      while (scanf("%i", &userchoice) == 0 || userchoice < 0 || userchoice > devct - 1) { 
+        printf("Invalid choice...Please choose again between 0 and %d:\n", devct - 1);
+        // clear carriage return from keyboard buffer after invalid choice
+        getchar();
       }
     }
     strcpy(comm_port_name, devnames[userchoice]);
@@ -356,8 +355,8 @@ int setup_com_port(int comPort, speed_t baudRate) {
 int open_com_port(const char* comPortPath, speed_t baudRate) {
   int comPort = open(comPortPath, O_RDWR | O_NOCTTY);
 
-  if (comPort == -1) {  // Opening of port failed
-
+  if (comPort == -1) { 
+    // Opening of port failed
     printf("Unable to open com Port %s\n Errno = %i\n", comPortPath, errno);
     return -1;
   }
@@ -504,8 +503,7 @@ bool set_sampling_settings(app_t* app) {
 }
 
 bool handle_message(app_t* app) {
-  microstrain_ins_t ins_message;
-  memset(&ins_message, 0, sizeof(ins_message));
+
   int ins_timer;
   int64_t utime = bot_timestamp_now();
 
@@ -535,37 +533,38 @@ bool handle_message(app_t* app) {
       ms_rpy[0] = atan2(rot[5], rot[8]);  // roll
       ms_rpy[1] = asin(-rot[2]);          // pitch
       ms_rpy[2] = atan2(rot[1], rot[0]);  // yaw
-      bot_roll_pitch_yaw_to_quat(ms_rpy, ins_message.quat);
+//      bot_roll_pitch_yaw_to_quat(ms_rpy, ins_message.quat);
 
       got_quat = true;
       // fall into standard ins message handling
     }
     case ACC_ANG_MAG: {
       if (app->message_mode == ACC_ANG_MAG_ROT && !got_quat && !app->quiet)
-        printf(
-            "error, received ACC_ANG_MAG instead of ACC_ANG_MAG_ROT (no quat "
-            "received)\n");
+        printf("error, received ACC_ANG_MAG instead of ACC_ANG_MAG_ROT (no quat received)\n");
 
       // get the data we care about
       unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
-      convertFloatToDouble(ins_message.accel, vals, 3);
-      bot_vector_scale_3d(ins_message.accel, GRAVITY);
+      app->reading.linear_acceleration.x = vals[0];
+      app->reading.linear_acceleration.y = vals[1];
+      app->reading.linear_acceleration.z = vals[2];
+//      convertFloatToDouble(app->reading.linear_acceleration, vals, 3);
+//      bot_vector_scale_3d(app->reading.linear_acceleration, GRAVITY);
 
-      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
-      convertFloatToDouble(ins_message.gyro, vals, 3);
+//      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
+//      convertFloatToDouble(app->reading.orientation, vals, 3);
 
-      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
-      convertFloatToDouble(ins_message.mag, vals, 3);
+//      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
+//      convertFloatToDouble(ins_message.mag, vals, 3);
 
       // ins internal timer, currently not used
       ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
 
-      ins_message.device_time = ((double)ins_timer) / 62500.0;
+//      ins_message.device_time = ((double)ins_timer) / 62500.0;
 
       if (app->do_sync) {
-        ins_message.utime = bot_timestamp_sync(app->sync, ins_timer, utime);
+        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
       } else {
-        ins_message.utime = utime;
+        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
       }
 
       // microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
@@ -578,27 +577,29 @@ bool handle_message(app_t* app) {
 
       // get the data we care about
       unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
-      convertFloatToDouble(ins_message.accel, vals, 3);
-      bot_vector_scale_3d(ins_message.accel, GRAVITY);
+      app->reading.linear_acceleration.x = vals[0];
+      app->reading.linear_acceleration.y = vals[1];
+      app->reading.linear_acceleration.z = vals[2];
+//      convertFloatToDouble(app->reading.linear_acceleration, vals, 3);
+//      bot_vector_scale_3d(app->reading.linear_acceleration, GRAVITY);
 
-      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
-      convertFloatToDouble(ins_message.gyro, vals, 3);
+//      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
+//      convertFloatToDouble(app->reading.orientation, vals, 3);
 
-      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
-      convertFloatToDouble(ins_message.mag, vals, 3);
+//      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
+//      convertFloatToDouble(ins_message.mag, vals, 3);
 
       // ins internal timer, currently not used
       ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
 
-      ins_message.device_time = ((double)ins_timer) / 62500.0;
+//      ins_message.device_time = ((double)ins_timer) / 62500.0;
 
       if (app->do_sync) {
-        ins_message.utime = bot_timestamp_sync(app->sync, ins_timer, utime);
+        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
       } else {
-        ins_message.utime = utime;
+        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
       }
-      // microstrain_ins_t_publish(app->lcm, app->channel.c_str(),
-      // &ins_message);
+      // microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
     }
 
@@ -607,31 +608,34 @@ bool handle_message(app_t* app) {
         printf("error: received unexpected DANG_DVEL_MAG message\n");
 
       // get the data we care about
-      unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
-      convertFloatToDouble(ins_message.gyro, vals, 3);
-      bot_vector_scale_3d(ins_message.gyro, 1 / app->delta_t);
+//      unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
+//      convertFloatToDouble(app->reading.orientation, vals, 3);
+//      bot_vector_scale_3d(app->reading.orientation, 1 / app->delta_t);
 
       unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
-      convertFloatToDouble(ins_message.accel, vals, 3);
-      bot_vector_scale_3d(ins_message.accel, 1 / app->delta_t);
-      bot_vector_scale_3d(ins_message.accel, GRAVITY);
+      app->reading.linear_acceleration.x = vals[0];
+      app->reading.linear_acceleration.y = vals[1];
+      app->reading.linear_acceleration.z = vals[2];
+//      convertFloatToDouble(app->reading.linear_acceleration, vals, 3);
+//      bot_vector_scale_3d(app->reading.linear_acceleration, 1 / app->delta_t);
+//      bot_vector_scale_3d(app->reading.linear_acceleration, GRAVITY);
 
-      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
-      convertFloatToDouble(ins_message.mag, vals, 3);
+//      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
+//      convertFloatToDouble(ins_message.mag, vals, 3);
 
       // ins internal timer, currently not used
       ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
 
-      ins_message.device_time = ins_timer * 16;  // 1e6 / 62500.0;
+//      ins_message.device_time = ins_timer * 16;  // 1e6 / 62500.0;
 
       if (app->do_sync) {
-        ins_message.utime = bot_timestamp_sync(app->sync, ins_timer, utime);
+        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
       } else {
-        ins_message.utime = utime;
+        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
       }
 
       // Debug to show our sensor is working
-      cout << ins_message.utime << " (" << ins_message.accel[0] << ", " << ins_message.accel[1] << ", " << ins_message.accel[2] << ")" << endl;
+      
 
 //      microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
@@ -671,6 +675,9 @@ bool handle_message(app_t* app) {
       break;
     }
   }
+  
+  // Test debug
+  cout << app->reading.header.stamp << " (" << app->reading.linear_acceleration << ")" << endl;
 
   return success;
 }
@@ -717,28 +724,21 @@ void unpack_packets(app_t* app) {
             break;
           default:
             if (!app->quiet) {
-              fprintf(stderr, "no match for message start byte %d\n",
-                      app->message_start_byte);
+              fprintf(stderr, "no match for message start byte %d\n", app->message_start_byte);
             }
             // read a byte and continue if we don't have a match
-            bot_ringbuf_read(app->read_buffer, 1,
-                             (uint8_t*)&app->message_start_byte);
+            bot_ringbuf_read(app->read_buffer, 1, (uint8_t*)&app->message_start_byte);
             app->current_segment = 's';
             break;
         }
         break;
       case 'p':
-        bot_ringbuf_read(app->read_buffer, app->expected_segment_length,
-                         app->input_buffer);
-        unsigned short transmitted_cksum = make16UnsignedInt(
-            &app->input_buffer[app->expected_segment_length - 2],
-            app->little_endian);
-        unsigned short computed_cksum =
-            cksum(app->input_buffer, app->expected_segment_length);
+        bot_ringbuf_read(app->read_buffer, app->expected_segment_length, app->input_buffer);
+        unsigned short transmitted_cksum = make16UnsignedInt( &app->input_buffer[app->expected_segment_length - 2], app->little_endian);
+        unsigned short computed_cksum = cksum(app->input_buffer, app->expected_segment_length);
         if (computed_cksum != transmitted_cksum) {
           if (!app->quiet)
-            fprintf(stderr, "Failed check sum! got: %d, expected: %d\n",
-                    transmitted_cksum, computed_cksum);
+            fprintf(stderr, "Failed check sum! got: %d, expected: %d\n", transmitted_cksum, computed_cksum);
           break;
         }
 
@@ -808,7 +808,6 @@ int main(int argc, char** argv) {
 
   // Default settings
   string user_comm_port_name;
-  bool auto_comm;
   string data_rate;
 
   bool acc_ang_mag_rot;
@@ -824,10 +823,6 @@ int main(int argc, char** argv) {
   nh.param("no_delta", acc_ang_mag, false);
   nh.param("filter", acc_stab, false);
   nh.param("time_sync", app->do_sync, true);
-
-  // If user defined port, don't use the auto scan
-  if (user_comm_port_name != "")
-    auto_comm = false;
 
   // Data rate (which also determines baud rate)
   if(data_rate == "low") {
@@ -889,7 +884,8 @@ int main(int argc, char** argv) {
 
   app->read_buffer = bot_ringbuf_create(INPUT_BUFFER_SIZE);
 
-  if (auto_comm)
+  // Use user specified port if there is one
+  if (user_comm_port_name == "")
     scandev(app->comm_port_name);
   else
     strcpy(app->comm_port_name, user_comm_port_name.c_str());
