@@ -112,7 +112,7 @@ class app_t {
 
   int64_t utime_prev;
 
-  BotParam* param;
+//  BotParam* param;
 
   string channel;
 
@@ -821,10 +821,10 @@ int main(int argc, char** argv) {
   bool acc_ang_mag;
   bool acc_stab;
 
-  nh.param("verbose", app->verbose, 0);
-  nh.param("quiet", app->quiet, 0);
-  nh.param("user_comm_port_name", user_comm_port_name, NULL);
-  nh.param("rate", data_rate, "low");
+  nh.param("verbose", app->verbose, false);
+  nh.param("quiet", app->quiet, false);
+  nh.param("user_comm_port_name", user_comm_port_name, string(""));
+  nh.param("rate", data_rate, string("low"));
   nh.param("window", app->filter_window_size, FILTER_WINDOW_SIZE_DEFAULT);
   nh.param("quat", acc_ang_mag_rot, false);
   nh.param("no_delta", acc_ang_mag, false);
@@ -832,27 +832,27 @@ int main(int argc, char** argv) {
   nh.param("time_sync", app->do_sync, true);
 
   // If user defined port, don't use the auto scan
-  if (user_comm_port_name != NULL)
+  if (user_comm_port_name != "")
     auto_comm = false;
 
-  // data rate (which also determines baud rate)
-  switch (data_rate) {
-    case 'low':
-      // Default
-      break;
-    case 'medium':
-      app->data_rate = DATA_RATE_MED;
-      app->baud_rate = BAUD_RATE_MED;
-      app->delta_t = DELTA_ANG_VEL_DT_MED;
-      break;
-    case 'high':
-      app->data_rate = DATA_RATE_HIGH;
-      app->baud_rate = BAUD_RATE_HIGH;
-      app->delta_t = DELTA_ANG_VEL_DT_HIGH;
-      break;
-    default:
-      cerr << "Unknown update rate flag - using default rate" << endl;
-      break;
+  // Data rate (which also determines baud rate)
+  if(data_rate == "low") {
+    app->data_rate = DATA_RATE_DEFAULT;
+    app->baud_rate = BAUD_RATE_DEFAULT;
+    app->delta_t = DELTA_ANG_VEL_DT_DEFAULT;
+  }
+  else  if(data_rate == "medium") {
+    app->data_rate = DATA_RATE_MED;
+    app->baud_rate = BAUD_RATE_MED;
+    app->delta_t = DELTA_ANG_VEL_DT_MED;
+  }
+  else  if(data_rate == "high") {
+    app->data_rate = DATA_RATE_HIGH;
+    app->baud_rate = BAUD_RATE_HIGH;
+    app->delta_t = DELTA_ANG_VEL_DT_HIGH;
+  }
+  else {
+    cerr << "Unknown update rate flag - using default rate" << endl;
   }
 
   if (!app->quiet)

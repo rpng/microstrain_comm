@@ -4,7 +4,7 @@
 #include <sys/time.h>
 #include <sys/select.h>
 
-#include "timestamp.h"
+#include "libbot/timestamp.h"
 
 int64_t bot_timestamp_now()
 {
