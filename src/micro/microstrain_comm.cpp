@@ -819,21 +819,15 @@ static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, 
   return TRUE;
 }
 
-gboolean timeout_callback(gpointer data)
-{
-  static int i = 0;
-  i++;
-  g_print("timeout_callback called %d times\n", i);
-  cout << ((GMainLoop*)data) << endl;
-  return TRUE;
-}
-
 int main(int argc, char** argv) {
   app_t* app = new app_t();
   app->little_endian = systemLittleEndianCheck();
   
   ros::init(argc, argv, "microstrain_comm");
   ros::NodeHandle nh("~");
+  
+  // Defualt message mode
+  app->message_mode = DANG_DVEL_MAG;
 
   // Default settings
   string user_comm_port_name;
@@ -950,7 +944,6 @@ int main(int argc, char** argv) {
   app->expected_segment_length = 1;
   GIOChannel* ioc = g_io_channel_unix_new(app->comm);
   g_io_add_watch_full(ioc, G_PRIORITY_HIGH, G_IO_IN, (GIOFunc)serial_read_handler, (void*)app, NULL);
-  g_timeout_add (100 , timeout_callback , mainloop); 
   g_main_loop_run(mainloop);
 
   // received signal - soft reset to cleanup before quitting
