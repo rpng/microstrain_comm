@@ -1,6 +1,6 @@
 #include <termios.h> // terminal io (serial port) interface
-#include <fcntl.h>   // File control definitions
-#include <errno.h>   // Error number definitions
+#include <fcntl.h>      // File control definitions
+#include <errno.h>    // Error number definitions
 #include <assert.h>
 #include <signal.h>
 #include <unistd.h>
@@ -18,60 +18,15 @@
 #include <glib.h>
 #include <gio/gio.h>
 
+#include "micro/microstrain_comm.h"
+#include "micro/util.h"
+
 #include "libbot/timestamp.h"
 #include "libbot/rotations.h"
 #include "libbot/small_linalg.h"
 #include "libbot/ringbuf.h"
 
-#define ACCEL_ANGRATE_ORIENT 0xC8
-#define LENGTH_ACCEL_ANGRATE_ORIENT 67
-
-#define ACC_ANG_MAG 0xCB
-#define LENGTH_ACC_ANG_MAG 43
-
-#define ACC_STAB (0xD2)
-#define LENGTH_ACC_STAB (43)
-
-#define DANG_DVEL_MAG 0xD3
-#define LENGTH_DANG_DVEL_MAG 43
-
-#define ACC_ANG_MAG_ROT 0xCC
-#define LENGTH_ACC_ANG_MAG_ROT 79
-
-#define CONTINUOUS_MODE_COMMAND 0xC4
-#define LENGTH_CONTINUOUS_MODE 4
-#define LENGTH_CONTINUOUS_MODE_ECHO 8
-
-#define COMMS_SETTINGS_COMMAND 0xD9
-#define LENGTH_COMMS_SETTINGS 11
-#define LENGTH_COMMS_SETTINGS_ECHO 10
-
-#define SAMPLING_SETTINGS_COMMAND 0xDB
-#define LENGTH_SAMPLING_SETTINGS 20
-#define LENGTH_SAMPLING_SETTINGS_ECHO 19
-
-#define DATA_RATE_DEFAULT 100
-#define DATA_RATE_MED 500
-#define DATA_RATE_HIGH 1000
-
-#define BAUD_RATE_DEFAULT 115200
-#define BAUD_RATE_MED 460800
-#define BAUD_RATE_HIGH 921600
-
-#define DELTA_ANG_VEL_DT_DEFAULT 0.010
-#define DELTA_ANG_VEL_DT_MED 0.002
-#define DELTA_ANG_VEL_DT_HIGH 0.001
-
-#define FILTER_WINDOW_SIZE_DEFAULT 15
-#define FILTER_WINDOW_SIZE_MIN 1
-#define FILTER_WINDOW_SIZE_MAX 32
-
-#define GRAVITY 9.80665
-
-typedef unsigned char Byte;
 using namespace std;
-
-#define INPUT_BUFFER_SIZE 2000
 
 // global reference to Glib main loop
 static GMainLoop* mainloop = NULL;
@@ -126,100 +81,6 @@ public:
     bool do_sync;
 };
 
-bool systemLittleEndianCheck()
-{
-    short int word = 0x0001;
-    char* bytes = (char*)&word;
-    if (bytes[0] == 0)
-        return false;
-    else
-        return true;
-}
-
-unsigned int make32UnsignedInt(Byte* pBytes, bool little_endian)
-{
-    unsigned int i;
-
-    if (little_endian) {
-        ((Byte*)(&i))[0] = pBytes[3];
-        ((Byte*)(&i))[1] = pBytes[2];
-        ((Byte*)(&i))[2] = pBytes[1];
-        ((Byte*)(&i))[3] = pBytes[0];
-    } else {
-        ((Byte*)(&i))[0] = pBytes[0];
-        ((Byte*)(&i))[1] = pBytes[1];
-        ((Byte*)(&i))[2] = pBytes[2];
-        ((Byte*)(&i))[3] = pBytes[3];
-    }
-
-    return i;
-}
-
-unsigned int make16UnsignedInt(const Byte* pBytes, bool little_endian)
-{
-    unsigned int i;
-
-    if (little_endian) {
-        ((Byte*)(&i))[0] = pBytes[1];
-        ((Byte*)(&i))[1] = pBytes[0];
-
-    } else {
-        ((Byte*)(&i))[0] = pBytes[0];
-        ((Byte*)(&i))[1] = pBytes[1];
-    }
-
-    return i;
-}
-
-void makeUnsignedInt16(unsigned int val, Byte* high, Byte* low)
-{
-    *low = static_cast<Byte>(val);
-    *high = static_cast<Byte>(val >> 8);
-}
-
-void makeUnsignedInt32(unsigned int val, Byte* byte3, Byte* byte2, Byte* byte1, Byte* byte0)
-{
-    *byte0 = static_cast<Byte>(val);
-    *byte1 = static_cast<Byte>(val >> 8);
-    *byte2 = static_cast<Byte>(val >> 16);
-    *byte3 = static_cast<Byte>(val >> 24);
-}
-
-float make32bitFloat(const Byte* pBytes, bool little_endian)
-{
-    float f = 0;
-
-    if (little_endian) {
-        ((Byte*)(&f))[0] = pBytes[3];
-        ((Byte*)(&f))[1] = pBytes[2];
-        ((Byte*)(&f))[2] = pBytes[1];
-        ((Byte*)(&f))[3] = pBytes[0];
-    } else {
-        ((Byte*)(&f))[0] = pBytes[0];
-        ((Byte*)(&f))[1] = pBytes[1];
-        ((Byte*)(&f))[2] = pBytes[2];
-        ((Byte*)(&f))[3] = pBytes[3];
-    }
-
-    return f;
-}
-
-void unpack32BitFloats(float* dest, const Byte* source_bytes, int length, bool little_endian)
-{
-    int ii;
-    int byte_ind = 0;
-    for (ii = 0; ii < length; ii++) {
-        dest[ii] = make32bitFloat(&source_bytes[byte_ind], little_endian);
-        byte_ind += 4;
-    }
-}
-
-void convertFloatToDouble(double* dest, const float* source, int length)
-{
-    for (int ii = 0; ii < length; ii++) {
-        dest[ii] = (double)source[ii];
-    }
-}
 
 static void sig_action(int signal, siginfo_t* s, void* user)
 {
@@ -227,32 +88,6 @@ static void sig_action(int signal, siginfo_t* s, void* user)
     if (g_main_loop_is_running(mainloop)) {
         g_main_loop_quit(mainloop);
     }
-}
-
-/**
- * Converts a raw, pitch, and yaw messurements into a quaturian
- * Orginally part of the libbot library, but converted to work with floats
- */
-void roll_pitch_yaw_to_quat(const float rpy[3], float q[4])
-{
-    float roll = rpy[0], pitch = rpy[1], yaw = rpy[2];
-
-    float halfroll = roll / 2;
-    float halfpitch = pitch / 2;
-    float halfyaw = yaw / 2;
-
-    float sin_r2 = sin(halfroll);
-    float sin_p2 = sin(halfpitch);
-    float sin_y2 = sin(halfyaw);
-
-    float cos_r2 = cos(halfroll);
-    float cos_p2 = cos(halfpitch);
-    float cos_y2 = cos(halfyaw);
-
-    q[0] = cos_r2 * cos_p2 * cos_y2 + sin_r2 * sin_p2 * sin_y2;
-    q[1] = sin_r2 * cos_p2 * cos_y2 - cos_r2 * sin_p2 * sin_y2;
-    q[2] = cos_r2 * sin_p2 * cos_y2 + sin_r2 * cos_p2 * sin_y2;
-    q[3] = cos_r2 * cos_p2 * sin_y2 - sin_r2 * sin_p2 * cos_y2;
 }
 
 void install_signal_handler()
