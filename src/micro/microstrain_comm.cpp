@@ -598,20 +598,18 @@ bool handle_message(app_t* app) {
         ms_rpy[0] = atan2(vals[5], vals[8]); // roll
         ms_rpy[1] = asin(-vals[2]); // pitch
         ms_rpy[2] = atan2(vals[1], vals[0]); // yaw
-        
         roll_pitch_yaw_to_quat(ms_rpy, q);
+        
+        // Set the calculated quat values
         app->reading.orientation.x = q[0];
         app->reading.orientation.y = q[1];
         app->reading.orientation.z = q[2];
         app->reading.orientation.w = q[3];
       
-        if (app->do_sync) {
-          app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
-        } else {
-          app->reading.header.stamp = ros::Time::now().fromNSec(utime);
-        }
+        // Append current ros timestamp
+        app->reading.header.stamp = ros::Time::now();
       
-        // Publish
+        // Publish to our topic
         imu_data_pub_.publish(app->reading);
 
       break;
@@ -867,10 +865,8 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Little endian = %d\n", (int)app->little_endian);
 
   mainloop = g_main_loop_new(NULL, FALSE);
-//  app->lcm = bot_lcm_get_global(NULL);
   app->utime_prev = bot_timestamp_now();
   app->sync = bot_timestamp_sync_init(62500, (int64_t)68719 * 62500, 1.001);
-  //  app->param = bot_param_new_from_server(app->lcm, 1);
 
   app->read_buffer = bot_ringbuf_create(INPUT_BUFFER_SIZE);
 
