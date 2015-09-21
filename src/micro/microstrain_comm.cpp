@@ -83,6 +83,9 @@ using namespace std;
 // global reference to Glib main loop
 static GMainLoop* mainloop = NULL;
 
+// global publisher
+ros::Publisher imu_data_pub_;
+
 // self structure
 class app_t {
   public:
@@ -223,6 +226,32 @@ static void sig_action(int signal, siginfo_t* s, void* user) {
   if (g_main_loop_is_running(mainloop)) {
     g_main_loop_quit(mainloop);
   }
+}
+
+/**
+ * Converts a raw, pitch, and yaw messurements into a quaturian
+ * Orginally part of the libbot library, but converted to work with floats
+ */
+void  roll_pitch_yaw_to_quat(const float rpy[3], float q[4])
+{
+    float roll = rpy[0], pitch = rpy[1], yaw = rpy[2];
+
+    float halfroll = roll / 2;
+    float halfpitch = pitch / 2;
+    float halfyaw = yaw / 2;
+
+    float sin_r2 = sin (halfroll);
+    float sin_p2 = sin (halfpitch);
+    float sin_y2 = sin (halfyaw);
+
+    float cos_r2 = cos (halfroll);
+    float cos_p2 = cos (halfpitch);
+    float cos_y2 = cos (halfyaw);
+
+    q[0] = cos_r2 * cos_p2 * cos_y2 + sin_r2 * sin_p2 * sin_y2;
+    q[1] = sin_r2 * cos_p2 * cos_y2 - cos_r2 * sin_p2 * sin_y2;
+    q[2] = cos_r2 * sin_p2 * cos_y2 + sin_r2 * cos_p2 * sin_y2;
+    q[3] = cos_r2 * cos_p2 * sin_y2 - sin_r2 * sin_p2 * cos_y2;
 }
 
 void install_signal_handler() {
@@ -587,13 +616,13 @@ bool handle_message(app_t* app) {
     }
     case CMD_ACCEL_ANGRATE_ORIENT: {
         // Get our linear acceleration
-        unpack32BitFloats(vals, &app->input_buffer[2], 3, app->little_endian);
+        unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
         app->reading.linear_acceleration.x = vals[0] * GRAVITY;
         app->reading.linear_acceleration.y = vals[1] * GRAVITY;
         app->reading.linear_acceleration.z = vals[2] * GRAVITY;
 
         // Get our angular velocity
-        unpack32BitFloats(vals, &app->input_buffer[14], 3, app->little_endian);
+        unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
         app->reading.angular_velocity.x = vals[0];
         app->reading.angular_velocity.y = vals[1];
         app->reading.angular_velocity.z = vals[2];
@@ -601,16 +630,21 @@ bool handle_message(app_t* app) {
         // Skip out magnetometer readings
 
         // Get our orientation matrix, and convert it to quat
-        unpack32BitFloats(vals, &app->input_buffer[38], 9, app->little_endian);
-        tf::Quaternion quat;
-        (tf::Matrix3x3(-1,0,0,
-        0,1,0,
-        0,0,-1)*
-        tf::Matrix3x3(vals[0], vals[3], vals[6],
-        vals[1], vals[4], vals[7],
-        vals[2], vals[5], vals[8])).getRotation(quat);
-
-        tf::quaternionTFToMsg(quat, app->reading.orientation);
+        unpack32BitFloats(vals, &app->input_buffer[37], 9, app->little_endian);
+        // This libbot2 function is faulty:
+        // bot_matrix_to_quat(rot, ins_message.quat);
+        // Workaround (from mfallon, oct2011)
+        float ms_rpy[] = { 0, 0, 0 };
+        float q[] = { 0, 0, 0, 0 };
+        ms_rpy[0] = atan2(vals[5], vals[8]); // roll
+        ms_rpy[1] = asin(-vals[2]); // pitch
+        ms_rpy[2] = atan2(vals[1], vals[0]); // yaw
+        
+        roll_pitch_yaw_to_quat(ms_rpy, q);
+        app->reading.orientation.x = q[0];
+        app->reading.orientation.y = q[1];
+        app->reading.orientation.z = q[2];
+        app->reading.orientation.w = q[3];
       
         if (app->do_sync) {
           app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
@@ -618,7 +652,8 @@ bool handle_message(app_t* app) {
           app->reading.header.stamp = ros::Time::now().fromNSec(utime);
         }
       
-        // TODO: Publish
+        // Publish
+        imu_data_pub_.publish(app->reading);
 
       break;
     }
@@ -683,6 +718,9 @@ void unpack_packets(app_t* app) {
         app->current_segment = 'p';
 
         switch (app->message_start_byte) {
+          case CMD_ACCEL_ANGRATE_ORIENT:
+            app->expected_segment_length = LENGTH_ACCEL_ANGRATE_ORIENT;
+            break;
           case ACC_ANG_MAG:
             app->expected_segment_length = LENGTH_ACC_ANG_MAG;
             break;
@@ -794,6 +832,10 @@ int main(int argc, char** argv) {
   
   ros::init(argc, argv, "microstrain_comm");
   ros::NodeHandle nh("~");
+  
+  // Our publisher
+  ros::NodeHandle imu_node_handle("imu");
+  imu_data_pub_ = imu_node_handle.advertise<sensor_msgs::Imu>("data", 100);
   
   // Defualt message mode
   app->message_mode = CMD_ACCEL_ANGRATE_ORIENT;
