@@ -28,17 +28,17 @@
 
 using namespace std;
 
-// global reference to Glib main loop
+// Global reference to Glib main loop
 static GMainLoop* mainloop = NULL;
 
-// global publisher
+// Global ROS publisher
 ros::Publisher imu_data_pub_;
 
-// self structure
+// Core app self structure
 class app_t
 {
 public:
-    // communication variables
+    // Communication variables
     int comm, status;
     char comm_port_name[255];
     unsigned int baud_rate, data_rate;
@@ -46,21 +46,21 @@ public:
     // dt for angular rate and acceleration computation
     double delta_t;
 
-    // window size for gyro and accelerometer digital filter
+    // Window size for gyro and accelerometer digital filter
     int filter_window_size;
 
-    // input buffer variables
+    // Input buffer variables
     Byte input_buffer[INPUT_BUFFER_SIZE];
     Byte message_mode;
     BotRingBuf* read_buffer;
     char current_segment;
     int expected_segment_length;
 
-    // packet variables
+    // Packet variables
     int message_size;
     int message_start_byte;
 
-    // state flags (not currently used, but may be in future)
+    // State flags (not currently used, but may be in future)
     bool changed_baud_rate;
     bool changed_data_rate;
     bool in_continuous_mode;
@@ -77,11 +77,14 @@ public:
     // Our imu message
     sensor_msgs::Imu reading;
 
+    // Libbot time sync (currently not used)
     bot_timestamp_sync_state* sync;
     bool do_sync;
 };
 
-
+/**
+ * Callback function that will exit the glib loop
+ */
 static void sig_action(int signal, siginfo_t* s, void* user)
 {
     // kill the glib main loop...
@@ -90,6 +93,10 @@ static void sig_action(int signal, siginfo_t* s, void* user)
     }
 }
 
+/**
+ * Set our signal callback, and have it called on
+ * SIGINT, SIGTERM, SIGKILL, SIGHUP
+ */
 void install_signal_handler()
 {
     struct sigaction action;
@@ -103,11 +110,10 @@ void install_signal_handler()
     sigaction(SIGHUP, &action, NULL);
 }
 
-// ------------- Functions taken from microstrain driver for opening commport
-// with proper settings and finding an attached microstrain device -----------
-
-// scandev
-// finds attached microstrain devices and prompts user for choice then returns selected portname
+/**
+ * This function scans for active serial ports, that could have the microstrain device on it
+ * Once the device is selected, the port name is found, and updated
+ */
 bool scandev(char* comm_port_name)
 {
     FILE* instream;
@@ -117,22 +123,22 @@ bool scandev(char* comm_port_name)
     int j = 0;
     int userchoice = 0;
 
-    // char command[] = "find /dev/serial -print | grep -i microstrain"; //search
-    // /dev/serial for microstrain devices
-    char command[] = "ls /dev/ttyACM*"; // search /dev/serial for microstrain devices
+    // The command we want to execute
+    // char command[] = "find /dev/serial -print | grep -i microstrain";
+    char command[] = "ls /dev/ttyACM*";
 
     printf("Searching for devices...\n");
 
-    // execute piped command in read mode
+    // Execute piped command in read mode
     instream = popen(command, "r");
 
-    // SOMETHING WRONG WITH THE SYSTEM COMMAND PIPE...EXITING
+    // If unable to open the pipe, return the method
     if (!instream) {
         printf("ERROR BROKEN PIPELINE %s\n", command);
         return false;
     }
 
-    // load char array of device addresses
+    // Load the char array for each device
     for (i = 0; i < 255 && (fgets(devnames[i], sizeof(devnames[i]), instream)); i++) {
         ++devct;
     }
@@ -147,15 +153,16 @@ bool scandev(char* comm_port_name)
         printf("Device Found:\n%d: %s\n", i, devnames[i]);
     }
 
-    // CHOOSE DEVICE TO CONNECT TO AND CONNECT TO IT (IF THERE ARE CONNECTED DEVICES)
+    // Have the user select what device they want to use
+    // If there is not a valid device, return false
     if (devct > 0) {
         printf("Number of devices = %d\n", devct);
         if (devct > 1) {
             printf("Please choose the number of the device to connect to (0 to %i):\n", devct - 1);
-            // check that there's input and in the correct range
+            // Check that there's input and in the correct range
             while (scanf("%i", &userchoice) == 0 || userchoice < 0 || userchoice > devct - 1) {
                 printf("Invalid choice...Please choose again between 0 and %d:\n", devct - 1);
-                // clear carriage return from keyboard buffer after invalid choice
+                // Clear carriage return from keyboard buffer after invalid choice
                 getchar();
             }
         }
@@ -167,28 +174,32 @@ bool scandev(char* comm_port_name)
     }
 }
 
+/**
+ * This method takes a communications port, and configures it
+ * Based on the com port passed from `open_com_port` the baudRate is set
+ */
 int setup_com_port(int comPort, speed_t baudRate)
 {
     // Get the current options for the port...
     struct termios options;
     tcgetattr(comPort, &options);
 
-    // set the desired baud rate (default for MicroStrain is 115200)
+    // Set the desired baud rate (default for MicroStrain is 115200)
     // int baudRate = B115200;
     cfsetospeed(&options, baudRate);
     cfsetispeed(&options, baudRate);
 
-    // set the number of data bits.
+    // Set the number of data bits.
     options.c_cflag &= ~CSIZE; // Mask the character size bits
     options.c_cflag |= CS8;
 
-    // set the number of stop bits to 1
+    // Set the number of stop bits to 1
     options.c_cflag &= ~CSTOPB;
 
     // Set parity to None
     options.c_cflag &= ~PARENB;
 
-    // set for non-canonical (raw processing, no echo, etc.)
+    // Set for non-canonical (raw processing, no echo, etc.)
     options.c_iflag = IGNPAR; // ignore parity check close_port(int
     options.c_oflag = 0;      // raw output
     options.c_lflag = 0;      // raw input
@@ -217,9 +228,10 @@ int setup_com_port(int comPort, speed_t baudRate)
     return comPort;
 }
 
-// Opens a com port with the correct settings for communicating with a
-// MicroStrain 3DM-GX3-25 sensor
-// Tweaked - split into two, added baud rate argument
+/**
+ * This method opens the communications port with the imu (3DM-GX3-25 sensor)
+ * After the port is open, the configuration method is called to set the baudrate
+ */
 int open_com_port(const char* comPortPath, speed_t baudRate)
 {
     int comPort = open(comPortPath, O_RDWR | O_NOCTTY);
@@ -234,19 +246,8 @@ int open_com_port(const char* comPortPath, speed_t baudRate)
 }
 
 /*
- * prints byte arrays in hex
- */
-void print_array_char_hex(const unsigned char* array, int length)
-{
-    int ii;
-    for (ii = 0; ii < length; ii++) {
-        fprintf(stderr, "%02X ", (unsigned char)array[ii]);
-    }
-    fprintf(stderr, "\n");
-}
-
-/*
- * checksum function
+ * This function computes the checksum to veryif the imu packets
+ * It is the  "sum of all preceding bytes with rollover from 65535 to 0"
  */
 unsigned short cksum(const Byte* packet_bytes, int packet_length)
 {
@@ -258,7 +259,8 @@ unsigned short cksum(const Byte* packet_bytes, int packet_length)
 }
 
 /*
- * sets continuous streaming operation
+ * This method sets the imu into continuous mode
+ * This means that the imu will edmit data events on the serial port
  */
 bool set_continuous_mode(app_t* app)
 {
@@ -269,18 +271,20 @@ bool set_continuous_mode(app_t* app)
         app->message_mode
     };
 
-    cout << "Setting continuous mode" << endl;
+    if (app->verbose)
+        cout << "Setting continuous mode" << endl;
 
+    // Send our command to the imu
     if (write(app->comm, set_mode_string, LENGTH_CONTINUOUS_MODE) != LENGTH_CONTINUOUS_MODE) {
         cerr << "Error writing command to set continuous mode" << endl;
         return false;
     }
-
     return true;
 }
 
-/*
- * stops continous streaming - command does not generate a response
+ /*
+ * This method stops the imu's continues mode
+ * The imu does not return a response
  */
 void stop_continuous_mode(app_t* app)
 {
@@ -290,13 +294,16 @@ void stop_continuous_mode(app_t* app)
         0xB4
     };
 
+    // Send our command to the imu
     if (write(app->comm, stop_mode_string, 3) != 3) {
         cerr << "Error writing command to stop continuous mode" << endl;
     }
 }
 
 /*
- * soft device reset - return to default settings
+ * Does a soft device reset
+ * This will return the imu settings to default
+ * The imu does not return a reponse
  */
 void soft_reset(app_t* app)
 {
@@ -306,28 +313,33 @@ void soft_reset(app_t* app)
         0x3A
     };
 
+    // Send our command to the imu
     if (write(app->comm, soft_reset_string, 3) != 3) {
         cerr << "Error writing command to stop continuous mode" << endl;
     }
 }
 
-/*
- * sets/changes comms baud rate
+/**
+ * This method sets the baud rate
+ * The baudrate is the "bandwidth" of the serial pipe
  */
 bool set_comms_baud_rate(app_t* app)
 {
     Byte baud0, baud1, baud2, baud3;
 
+    // Convert our int baud rate, into 4 seperate bytes
     makeUnsignedInt32(app->baud_rate, &baud3, &baud2, &baud1, &baud0);
 
     char set_comms_baud_rate_string[] = {
         COMMS_SETTINGS_COMMAND, // Byte  1  : command
-        0xC3,                   // Bytes 2-3: confirm intent
+        0xC3, // Bytes 2-3: confirm intent
         0x55,
         0x01,  // Byte  4  : port selector
         0x01,  // Byte  5  : temporary change
         baud3, // Bytes 6-9: baud rate
-        baud2, baud1, baud0,
+        baud2,
+        baud1,
+        baud0,
         0x02, // Byte  10 : port config
         0x00  // Byte  11 : reserved (zero)
     };
@@ -335,16 +347,17 @@ bool set_comms_baud_rate(app_t* app)
     if (app->verbose)
         cout << "Setting baud rate" << endl;
 
+    // Send our command to the imu
     if (write(app->comm, set_comms_baud_rate_string, LENGTH_COMMS_SETTINGS) != LENGTH_COMMS_SETTINGS) {
         cerr << "Error writing command to set comms baud rate" << endl;
         return false;
     }
-
     return true;
 }
 
-/*
- * sets/changes sensor update (data) rate and filter window size
+/**
+ * This methods updates the imu settings based on the user's preference
+ * The datarate (frequency) and filter window size is updated
  */
 bool set_sampling_settings(app_t* app)
 {
@@ -386,17 +399,23 @@ bool set_sampling_settings(app_t* app)
     if (app->verbose)
         cout << "Setting sampling settings" << endl;
 
+    // Send our command to the imu
     if (write(app->comm, set_sampling_params_string, LENGTH_SAMPLING_SETTINGS) != LENGTH_SAMPLING_SETTINGS) {
         cerr << "Error writing command to set sampling settings" << endl;
         return false;
     }
-
     return true;
 }
 
+/**
+ * This method handles all messages sent from the imu
+ * The configuration steps are also feed through this method
+ * Once the message type is determined, this method is called
+ */
 bool handle_message(app_t* app)
 {
 
+    // Our core timer, and sync time
     int ins_timer;
     int64_t utime = bot_timestamp_now();
 
@@ -407,9 +426,9 @@ bool handle_message(app_t* app)
         print_array_char_hex((unsigned char*)app->input_buffer, app->message_size);
     }
 
-    bool got_quat = false;
     bool success = true;
 
+    // Go through each message type, and see if we have a way to handle it
     switch (app->message_start_byte) {
     case ACC_ANG_MAG_ROT: {
         if (!app->quiet)
@@ -444,7 +463,7 @@ bool handle_message(app_t* app)
         app->reading.angular_velocity.y = vals[1];
         app->reading.angular_velocity.z = vals[2];
 
-        // Skip out magnetometer readings
+        // Skip out magnetometer readings, we don't have a way to edmit those
 
         // Get our orientation matrix, and convert it to quat
         unpack32BitFloats(vals, &app->input_buffer[37], 9, app->little_endian);
@@ -454,7 +473,7 @@ bool handle_message(app_t* app)
         float ms_rpy[] = { 0, 0, 0 };
         float q[] = { 0, 0, 0, 0 };
         ms_rpy[0] = atan2(vals[5], vals[8]); // roll
-        ms_rpy[1] = asin(-vals[2]);          // pitch
+        ms_rpy[1] = asin(-vals[2]); // pitch
         ms_rpy[2] = atan2(vals[1], vals[0]); // yaw
         roll_pitch_yaw_to_quat(ms_rpy, q);
 
@@ -511,13 +530,11 @@ bool handle_message(app_t* app)
     return success;
 }
 
-/*
- * gets data packets out of circular buffer.
- *
- * has 2 states, either looking for the header, or looking for the data +
- * checksum bytes.  it waits until it
- * has all expected bytes before taking appropriate action.
- */
+/**
+  * This methods gets the packets from the  circular buffer
+  * It has either 2 states, looking for headers, or looking for data + the checksum bytes
+  * If it is either of these two cases, it handles the message, and calls on the `handle_message` method
+  */
 void unpack_packets(app_t* app)
 {
     while (bot_ringbuf_available(app->read_buffer) >= app->expected_segment_length) {
@@ -589,12 +606,11 @@ void unpack_packets(app_t* app)
     }
 }
 
-/*
- * reads serial bytes from ardu as they become available from g_io_watch and
- * then writes them into the circular buffer
- * and calls unpack_packets
- *
- */
+/**
+  * This is the callback function from the glib main loop
+  * Reads serial bytes from ardu as they become available from g_io_watch
+  * These bytes are then writen to a circular buffer and the `unpack_packets` method is called
+  */
 static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, void* user)
 {
 
@@ -614,14 +630,14 @@ static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, 
     if (ioctl(app->comm, FIONREAD, &available) != 0) {
         if (!app->quiet)
             fprintf(stderr, "ioctl check for bytes available didn't return 0, breaking read\n");
-        return TRUE;
+        return true;
     }
 
     if (available > INPUT_BUFFER_SIZE) {
         if (!app->quiet)
             fprintf(stderr, "too many bytes available: %d, flushing input buffer\n", available);
         tcflush(app->comm, TCIFLUSH);
-        return TRUE;
+        return true;
     }
 
     int num_read = read(app->comm, middle_buffer, available);
@@ -637,9 +653,15 @@ static gboolean serial_read_handler(GIOChannel* source, GIOCondition condition, 
 
     unpack_packets(app);
 
-    return TRUE;
+    return true;
 }
 
+/**
+ * Our main method
+ * This method first reads in all parameter information
+ * After setting the configuration of the driver, the imu is set to continuous mode
+ * This main glib loop is what waits for data from the imu untill the proccess is ended
+ */
 int main(int argc, char** argv)
 {
     app_t* app = new app_t();
@@ -663,9 +685,10 @@ int main(int argc, char** argv)
     bool acc_ang_mag;
     bool acc_stab;
 
+    // Get our params from the config file, or command line
     nh.param("verbose", app->verbose, false);
     nh.param("quiet", app->quiet, false);
-    nh.param("user_comm_port_name", user_comm_port_name, string(""));
+    nh.param("com_port", user_comm_port_name, string(""));
     nh.param("rate", data_rate, string("low"));
     nh.param("window", app->filter_window_size, FILTER_WINDOW_SIZE_DEFAULT);
     nh.param("quat", acc_ang_mag_rot, false);
@@ -693,7 +716,7 @@ int main(int argc, char** argv)
     if (!app->quiet)
         cout << "Setting data rate to " << app->data_rate << " Hz" << endl;
 
-    // make sure filter window size isn't too big or small
+    // Make sure filter window size isn't too big or small
     if (app->filter_window_size < FILTER_WINDOW_SIZE_MIN) {
         app->filter_window_size = FILTER_WINDOW_SIZE_DEFAULT;
         cerr << "Digital filter window size too small, using default size" << endl;
@@ -705,7 +728,7 @@ int main(int argc, char** argv)
     if (!app->quiet)
         cout << "Setting digital filter window size to " << app->filter_window_size << endl;
 
-    // modes are mutually exlusive
+    // Modes are mutually exlusive
     if (acc_stab) {
         app->message_mode = ACC_STAB;
     } else if (acc_ang_mag) {
@@ -714,8 +737,8 @@ int main(int argc, char** argv)
         if (app->data_rate != DATA_RATE_HIGH) {
             app->message_mode = ACC_ANG_MAG_ROT;
         } else {
-            cout << "Can't compute orientation at high speed, using delta angle + delta velocity mode instead" << endl;
-            app->message_mode = DANG_DVEL_MAG;
+            cout << "Can't compute orientation at high speed, using \"Acceleration, Angular Rate & Orientation Matrix\" mode" << endl;
+            app->message_mode = ACCEL_ANGRATE_ORIENT;
         }
     }
 
@@ -725,7 +748,6 @@ int main(int argc, char** argv)
     mainloop = g_main_loop_new(NULL, FALSE);
     app->utime_prev = bot_timestamp_now();
     app->sync = bot_timestamp_sync_init(62500, (int64_t)68719 * 62500, 1.001);
-
     app->read_buffer = bot_ringbuf_create(INPUT_BUFFER_SIZE);
 
     // Use user specified port if there is one
@@ -734,42 +756,46 @@ int main(int argc, char** argv)
     else
         strcpy(app->comm_port_name, user_comm_port_name.c_str());
 
-    // initialize comm port at default baud rate
+    // Initialize comm port at default baud rate
     app->comm = open_com_port(app->comm_port_name, BAUD_RATE_DEFAULT);
     if (app->comm < 0) {
         exit(1);
     }
 
-    // install signal handler
+    // Install signal handler
     install_signal_handler();
 
-    // simple state machine
+    // Simple state machine
     if (app->data_rate == DATA_RATE_DEFAULT && app->filter_window_size == FILTER_WINDOW_SIZE_DEFAULT) {
-        // set continous mode and we're done
+        // Set continous mode and we're done
         if (!set_continuous_mode(app)) {
             exit(1);
         }
     } else if (app->data_rate == DATA_RATE_DEFAULT) {
-        // set filter window size, then set continous mode
+        // Set filter window size, then set continous mode
         if (!set_sampling_settings(app)) {
             exit(1);
         }
     } else {
-        // set baud rate, then sampling settings, then continuous mode
+        // Set baud rate, then sampling settings, then continuous mode
         if (!set_comms_baud_rate(app)) {
             exit(1);
         }
     }
 
+    // Set our current segment for unpacking
     app->current_segment = 's';
     app->expected_segment_length = 1;
+    
+    // Create a glib channel and main thread
     GIOChannel* ioc = g_io_channel_unix_new(app->comm);
     g_io_add_watch_full(ioc, G_PRIORITY_HIGH, G_IO_IN, (GIOFunc)serial_read_handler, (void*)app, NULL);
     g_main_loop_run(mainloop);
 
-    // received signal - soft reset to cleanup before quitting
+    // Received signal - soft reset to cleanup before quitting
     soft_reset(app);
 
+    // Close our imu port
     close(app->comm);
     return 0;
 }

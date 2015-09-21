@@ -124,4 +124,16 @@ void roll_pitch_yaw_to_quat(const float rpy[3], float q[4])
     q[3] = cos_r2 * cos_p2 * sin_y2 - sin_r2 * sin_p2 * cos_y2;
 }
 
+/*
+ * Prints byte arrays in hex
+ */
+void print_array_char_hex(const unsigned char* array, int length)
+{
+    int ii;
+    for (ii = 0; ii < length; ii++) {
+        fprintf(stderr, "%02X ", (unsigned char)array[ii]);
+    }
+    fprintf(stderr, "\n");
+}
+
 #endif
