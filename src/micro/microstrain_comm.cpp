@@ -23,13 +23,7 @@
 #include "libbot/small_linalg.h"
 #include "libbot/ringbuf.h"
 
-//#include <bot_core/bot_core.h>
-//#include <bot_param/param_client.h>
-// #include <lcm/lcm.h>
-// #include <lcmtypes/microstrain_ins_t.h>
-
-//#include <ConciseArgs>
-#define CMD_ACCEL_ANGRATE_ORIENT 0xC8
+#define ACCEL_ANGRATE_ORIENT 0xC8
 #define LENGTH_ACCEL_ANGRATE_ORIENT 67
 
 #define ACC_ANG_MAG 0xCB
@@ -121,8 +115,6 @@ class app_t {
     bool little_endian;
 
     int64_t utime_prev;
-
-  //  BotParam* param;
 
     string channel;
     
@@ -571,49 +563,17 @@ bool handle_message(app_t* app) {
         printf("error, received ACC_ANG_MAG instead of ACC_ANG_MAG_ROT (no quat received)\n");
       break;
     }
-
     case ACC_STAB: {
       if(!app->quiet)
         printf("error: received unexpected ACC_STAB message\n");
       break;
     }
-
     case DANG_DVEL_MAG: {
-//      if (app->message_mode != DANG_DVEL_MAG && !app->quiet)
       if(!app->quiet)
         printf("error: received unexpected DANG_DVEL_MAG message\n");
-
-      // get the data we care about
-//      unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
-//      convertFloatToDouble(app->reading.orientation, vals, 3);
-//      bot_vector_scale_3d(app->reading.orientation, 1 / app->delta_t);
-
-//      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
-//      app->reading.linear_acceleration.x = vals[0] * GRAVITY;
-//      app->reading.linear_acceleration.y = vals[1] * GRAVITY;
-//      app->reading.linear_acceleration.z = vals[2] * GRAVITY;
-
-//      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
-//      convertFloatToDouble(ins_message.mag, vals, 3);
-
-      // ins internal timer, currently not used
-//      ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
-
-//      ins_message.device_time = ins_timer * 16;  // 1e6 / 62500.0;
-
-//      if (app->do_sync) {
-//        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
-//      } else {
-//        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
-//      }
-
-      // Debug to show our sensor is working
-      
-
-//      microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
     }
-    case CMD_ACCEL_ANGRATE_ORIENT: {
+    case ACCEL_ANGRATE_ORIENT: {
         // Get our linear acceleration
         unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
         app->reading.linear_acceleration.x = vals[0] * GRAVITY;
@@ -691,9 +651,6 @@ bool handle_message(app_t* app) {
       break;
     }
   }
-  
-  // Test debug
-//  cout << app->reading.header.stamp << endl << app->reading.linear_acceleration << endl;
 
   return success;
 }
@@ -717,7 +674,7 @@ void unpack_packets(app_t* app) {
         app->current_segment = 'p';
 
         switch (app->message_start_byte) {
-          case CMD_ACCEL_ANGRATE_ORIENT:
+          case ACCEL_ANGRATE_ORIENT:
             app->expected_segment_length = LENGTH_ACCEL_ANGRATE_ORIENT;
             break;
           case ACC_ANG_MAG:
@@ -837,7 +794,7 @@ int main(int argc, char** argv) {
   imu_data_pub_ = imu_node_handle.advertise<sensor_msgs::Imu>("data", 100);
   
   // Defualt message mode
-  app->message_mode = CMD_ACCEL_ANGRATE_ORIENT;
+  app->message_mode = ACCEL_ANGRATE_ORIENT;
 
   // Default settings
   string user_comm_port_name;
