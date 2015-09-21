@@ -13,6 +13,7 @@
 #include <math.h>
 
 #include <ros/ros.h>
+#include "tf/transform_datatypes.h"
 #include "sensor_msgs/Imu.h"
 
 #include <glib.h>
@@ -29,6 +30,9 @@
 // #include <lcmtypes/microstrain_ins_t.h>
 
 //#include <ConciseArgs>
+#define CMD_ACCEL_ANGRATE_ORIENT 0xC8
+#define LENGTH_ACCEL_ANGRATE_ORIENT 67
+
 #define ACC_ANG_MAG 0xCB
 #define LENGTH_ACC_ANG_MAG 43
 
@@ -518,8 +522,6 @@ bool handle_message(app_t* app) {
   int ins_timer;
   int64_t utime = bot_timestamp_now();
 
-  memset(&app->reading, 0, sizeof(app->reading));
-
   float vals[9];
 
   if (app->verbose) {
@@ -532,92 +534,25 @@ bool handle_message(app_t* app) {
 
   switch (app->message_start_byte) {
     case ACC_ANG_MAG_ROT: {
-      if (app->message_mode != ACC_ANG_MAG_ROT && !app->quiet)
+      if(!app->quiet)
         printf("error, received ACC_ANG_MAG_ROT instead of ACC_ANG_MAG\n");
-
-      double rot[9];
-      unpack32BitFloats(vals, &app->input_buffer[37], 9, app->little_endian);
-      convertFloatToDouble(rot, vals, 9);
-
-      // This libbot2 function is faulty:
-      // bot_matrix_to_quat(rot, ins_message.quat);
-      // Workaround (from mfallon, oct2011)
-      double ms_rpy[] = {0, 0, 0};
-      ms_rpy[0] = atan2(rot[5], rot[8]);  // roll
-      ms_rpy[1] = asin(-rot[2]);          // pitch
-      ms_rpy[2] = atan2(rot[1], rot[0]);  // yaw
-//      bot_roll_pitch_yaw_to_quat(ms_rpy, ins_message.quat);
-
-      got_quat = true;
-      // fall into standard ins message handling
+      break;
     }
     case ACC_ANG_MAG: {
-      if (app->message_mode == ACC_ANG_MAG_ROT && !got_quat && !app->quiet)
+      if(!app->quiet)
         printf("error, received ACC_ANG_MAG instead of ACC_ANG_MAG_ROT (no quat received)\n");
-
-      // get the data we care about
-      unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
-      app->reading.linear_acceleration.x = vals[0];
-      app->reading.linear_acceleration.y = vals[1];
-      app->reading.linear_acceleration.z = vals[2];
-//      convertFloatToDouble(app->reading.linear_acceleration, vals, 3);
-//      bot_vector_scale_3d(app->reading.linear_acceleration, GRAVITY);
-
-//      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
-//      convertFloatToDouble(app->reading.orientation, vals, 3);
-
-//      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
-//      convertFloatToDouble(ins_message.mag, vals, 3);
-
-      // ins internal timer, currently not used
-      ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
-
-//      ins_message.device_time = ((double)ins_timer) / 62500.0;
-
-      if (app->do_sync) {
-        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
-      } else {
-        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
-      }
-
-      // microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
     }
 
     case ACC_STAB: {
-      if (app->message_mode != ACC_STAB && !app->quiet)
+      if(!app->quiet)
         printf("error: received unexpected ACC_STAB message\n");
-
-      // get the data we care about
-      unpack32BitFloats(vals, &app->input_buffer[1], 3, app->little_endian);
-      app->reading.linear_acceleration.x = vals[0];
-      app->reading.linear_acceleration.y = vals[1];
-      app->reading.linear_acceleration.z = vals[2];
-//      convertFloatToDouble(app->reading.linear_acceleration, vals, 3);
-//      bot_vector_scale_3d(app->reading.linear_acceleration, GRAVITY);
-
-//      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
-//      convertFloatToDouble(app->reading.orientation, vals, 3);
-
-//      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
-//      convertFloatToDouble(ins_message.mag, vals, 3);
-
-      // ins internal timer, currently not used
-      ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
-
-//      ins_message.device_time = ((double)ins_timer) / 62500.0;
-
-      if (app->do_sync) {
-        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
-      } else {
-        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
-      }
-      // microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
       break;
     }
 
     case DANG_DVEL_MAG: {
-      if (app->message_mode != DANG_DVEL_MAG && !app->quiet)
+//      if (app->message_mode != DANG_DVEL_MAG && !app->quiet)
+      if(!app->quiet)
         printf("error: received unexpected DANG_DVEL_MAG message\n");
 
       // get the data we care about
@@ -625,32 +560,60 @@ bool handle_message(app_t* app) {
 //      convertFloatToDouble(app->reading.orientation, vals, 3);
 //      bot_vector_scale_3d(app->reading.orientation, 1 / app->delta_t);
 
-      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
-      app->reading.linear_acceleration.x = vals[0];
-      app->reading.linear_acceleration.y = vals[1];
-      app->reading.linear_acceleration.z = vals[2];
-//      convertFloatToDouble(app->reading.linear_acceleration, vals, 3);
-//      bot_vector_scale_3d(app->reading.linear_acceleration, 1 / app->delta_t);
-//      bot_vector_scale_3d(app->reading.linear_acceleration, GRAVITY);
+//      unpack32BitFloats(vals, &app->input_buffer[13], 3, app->little_endian);
+//      app->reading.linear_acceleration.x = vals[0] * GRAVITY;
+//      app->reading.linear_acceleration.y = vals[1] * GRAVITY;
+//      app->reading.linear_acceleration.z = vals[2] * GRAVITY;
 
 //      unpack32BitFloats(vals, &app->input_buffer[25], 3, app->little_endian);
 //      convertFloatToDouble(ins_message.mag, vals, 3);
 
       // ins internal timer, currently not used
-      ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
+//      ins_timer = make32UnsignedInt(&app->input_buffer[37], app->little_endian);
 
 //      ins_message.device_time = ins_timer * 16;  // 1e6 / 62500.0;
 
-      if (app->do_sync) {
-        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
-      } else {
-        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
-      }
+//      if (app->do_sync) {
+//        app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
+//      } else {
+//        app->reading.header.stamp = ros::Time::now().fromNSec(utime);
+//      }
 
       // Debug to show our sensor is working
       
 
 //      microstrain_ins_t_publish(app->lcm, app->channel.c_str(), &ins_message);
+      break;
+    }
+    case CMD_ACCEL_ANGRATE_ORIENT: {
+      // Get our linear acceleration
+      unpack32BitFloats(vals, &app->input_buffer[2], 3, app->little_endian);
+      app->reading.linear_acceleration.x = vals[0] * GRAVITY;
+      app->reading.linear_acceleration.y = vals[1] * GRAVITY;
+      app->reading.linear_acceleration.z = vals[2] * GRAVITY;
+
+      // Get our angular velocity
+      unpack32BitFloats(vals, &app->input_buffer[14], 3, app->little_endian);
+      app->reading.angular_velocity.x = vals[0];
+      app->reading.angular_velocity.y = vals[1];
+      app->reading.angular_velocity.z = vals[2];
+      
+      // Skip out magnetometer readings
+        
+      // Get our orientation matrix, and convert it to quat
+      unpack32BitFloats(vals, &app->input_buffer[38], 9, app->little_endian);
+      tf::Quaternion quat;
+      (tf::Matrix3x3(-1,0,0,
+       0,1,0,
+       0,0,-1)*
+      tf::Matrix3x3(vals[0], vals[3], vals[6],
+       vals[1], vals[4], vals[7],
+       vals[2], vals[5], vals[8])).getRotation(quat);
+
+      tf::quaternionTFToMsg(quat, app->reading.orientation);
+      
+      // TODO: Publish
+
       break;
     }
     case CONTINUOUS_MODE_COMMAND: {
@@ -690,7 +653,7 @@ bool handle_message(app_t* app) {
   }
   
   // Test debug
-  cout << app->reading.header.stamp << endl << app->reading.linear_acceleration << endl;
+//  cout << app->reading.header.stamp << endl << app->reading.linear_acceleration << endl;
 
   return success;
 }
@@ -827,7 +790,7 @@ int main(int argc, char** argv) {
   ros::NodeHandle nh("~");
   
   // Defualt message mode
-  app->message_mode = DANG_DVEL_MAG;
+  app->message_mode = CMD_ACCEL_ANGRATE_ORIENT;
 
   // Default settings
   string user_comm_port_name;

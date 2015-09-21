@@ -4,6 +4,7 @@ project(microstrain_comm)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
+  tf
 )
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
@@ -15,6 +16,7 @@ catkin_package(
   CATKIN_DEPENDS
     roscpp
     sensor_msgs
+    tf
 )
 
 
