@@ -586,33 +586,39 @@ bool handle_message(app_t* app) {
       break;
     }
     case CMD_ACCEL_ANGRATE_ORIENT: {
-      // Get our linear acceleration
-      unpack32BitFloats(vals, &app->input_buffer[2], 3, app->little_endian);
-      app->reading.linear_acceleration.x = vals[0] * GRAVITY;
-      app->reading.linear_acceleration.y = vals[1] * GRAVITY;
-      app->reading.linear_acceleration.z = vals[2] * GRAVITY;
+        // Get our linear acceleration
+        unpack32BitFloats(vals, &app->input_buffer[2], 3, app->little_endian);
+        app->reading.linear_acceleration.x = vals[0] * GRAVITY;
+        app->reading.linear_acceleration.y = vals[1] * GRAVITY;
+        app->reading.linear_acceleration.z = vals[2] * GRAVITY;
 
-      // Get our angular velocity
-      unpack32BitFloats(vals, &app->input_buffer[14], 3, app->little_endian);
-      app->reading.angular_velocity.x = vals[0];
-      app->reading.angular_velocity.y = vals[1];
-      app->reading.angular_velocity.z = vals[2];
-      
-      // Skip out magnetometer readings
-        
-      // Get our orientation matrix, and convert it to quat
-      unpack32BitFloats(vals, &app->input_buffer[38], 9, app->little_endian);
-      tf::Quaternion quat;
-      (tf::Matrix3x3(-1,0,0,
-       0,1,0,
-       0,0,-1)*
-      tf::Matrix3x3(vals[0], vals[3], vals[6],
-       vals[1], vals[4], vals[7],
-       vals[2], vals[5], vals[8])).getRotation(quat);
+        // Get our angular velocity
+        unpack32BitFloats(vals, &app->input_buffer[14], 3, app->little_endian);
+        app->reading.angular_velocity.x = vals[0];
+        app->reading.angular_velocity.y = vals[1];
+        app->reading.angular_velocity.z = vals[2];
 
-      tf::quaternionTFToMsg(quat, app->reading.orientation);
+        // Skip out magnetometer readings
+
+        // Get our orientation matrix, and convert it to quat
+        unpack32BitFloats(vals, &app->input_buffer[38], 9, app->little_endian);
+        tf::Quaternion quat;
+        (tf::Matrix3x3(-1,0,0,
+        0,1,0,
+        0,0,-1)*
+        tf::Matrix3x3(vals[0], vals[3], vals[6],
+        vals[1], vals[4], vals[7],
+        vals[2], vals[5], vals[8])).getRotation(quat);
+
+        tf::quaternionTFToMsg(quat, app->reading.orientation);
       
-      // TODO: Publish
+        if (app->do_sync) {
+          app->reading.header.stamp = ros::Time::now().fromNSec(bot_timestamp_sync(app->sync, ins_timer, utime));
+        } else {
+          app->reading.header.stamp = ros::Time::now().fromNSec(utime);
+        }
+      
+        // TODO: Publish
 
       break;
     }
