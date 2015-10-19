@@ -6,7 +6,6 @@
 * Built with ROS indigo on Ubuntu 14.04 LTS
 
 ### Dependencies:
-* ROS
 * GLIB2
 * GTHREAD2
 * libbot (already included)
