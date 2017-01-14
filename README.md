@@ -4,6 +4,8 @@
 * Converted to run on the ROS framework from LCM
 * Original package got from https://github.com/ipab-slmc/pronto-distro
 * Built with ROS indigo on Ubuntu 14.04 LTS
+* Make sure that you are in the `dialout` group - `sudo adduser $USER dialout`
+* Add yourself to the dialout group and restart your computer
 
 ### Dependencies:
 * GLIB2
